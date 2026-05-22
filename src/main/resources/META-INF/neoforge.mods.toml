@@ -1,24 +1,24 @@
 modLoader="javafml"
-loaderVersion="[4,)"
-license="MIT"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
 
 [[mods]]
-modId="hotbarexpand"
-version="1.0.0"
-displayName="Hotbar Expand"
-authors="Example"
-description='''A hotbar expansion mod for Minecraft 1.21.1. Press Ctrl+B to expand/collapse hotbars.'''
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="${mod_authors}"
+description='''${mod_description}'''
 
-[[dependencies.hotbarexpand]]
+[[dependencies.${mod_id}]]
 modId="neoforge"
-mandatory=true
-versionRange="[21.1,)"
+type="required"
+versionRange="[${neo_version},)"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.hotbarexpand]]
+[[dependencies.${mod_id}]]
 modId="minecraft"
-mandatory=true
-versionRange="[1.21.1,1.22)"
+type="required"
+versionRange="${minecraft_version_range}"
 ordering="NONE"
 side="BOTH"

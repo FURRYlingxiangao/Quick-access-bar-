@@ -27,6 +27,21 @@ public class ClientSetup {
     public static void setup() {
     }
 
+    public static KeyMapping getHotbarKey(int index) {
+        return switch (index) {
+            case 0 -> HOTBAR_1_KEY;
+            case 1 -> HOTBAR_2_KEY;
+            case 2 -> HOTBAR_3_KEY;
+            case 3 -> HOTBAR_4_KEY;
+            case 4 -> HOTBAR_5_KEY;
+            case 5 -> HOTBAR_6_KEY;
+            case 6 -> HOTBAR_7_KEY;
+            case 7 -> HOTBAR_8_KEY;
+            case 8 -> HOTBAR_9_KEY;
+            default -> null;
+        };
+    }
+
     @SubscribeEvent
     public static void onKeyRegister(RegisterKeyMappingsEvent event) {
         TOGGLE_EXPAND_KEY = new KeyMapping(
