@@ -1,6 +1,8 @@
 package com.example.hotbarexpand.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -92,9 +94,6 @@ public class ExpandedHotbarOverlay {
         handleNumberKeys();
     }
 
-    // 在ClientTick中检测按键（用于非取消性操作）
-    private static boolean[] keyWasDown = new boolean[10]; // 0-9
-    
     private static void handleNumberKeys() {
         // 只在展开状态下处理（不按Alt时选择列表格子）
         if (!isExpanded() && !isExpanding) return;
@@ -102,36 +101,17 @@ public class ExpandedHotbarOverlay {
         
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) return;
-        
-        // 如果背包或其他屏幕打开，不处理数字键选择列表格子
-        // 数字键在背包打开时应该只用于选择物品槽位
-        if (minecraft.screen != null) {
-            // 只更新keyWasDown状态，不处理选择
-            for (int i = 1; i <= 9; i++) {
-                int keyCode = 48 + i;
-                keyWasDown[i] = org.lwjgl.glfw.GLFW.glfwGetKey(minecraft.getWindow().getWindow(), keyCode) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
-            }
-            return;
-        }
-        
-        // 检测数字键1-9（只在不按Alt时处理，用于选择列表格子）
-        if (!Screen.hasAltDown()) {
-            for (int i = 1; i <= 9; i++) {
-                int keyCode = 48 + i; // GLFW_KEY_1 = 49
-                boolean isDown = org.lwjgl.glfw.GLFW.glfwGetKey(minecraft.getWindow().getWindow(), keyCode) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
-                
-                if (isDown && !keyWasDown[i]) {
-                    // 按键刚刚按下，选择列表中的格子
-                    selectedSlotInList = i - 1;
-                    System.out.println("[HotbarExpand] Selected slot in list: " + i);
+
+        boolean canSelectListEntry = minecraft.screen == null && !Screen.hasAltDown();
+        for (int i = 0; i < 9; i++) {
+            KeyMapping mapping = ClientSetup.getHotbarKey(i);
+            if (mapping == null) continue;
+
+            while (mapping.consumeClick()) {
+                if (canSelectListEntry) {
+                    selectedSlotInList = i;
+                    System.out.println("[HotbarExpand] Selected slot in list: " + (i + 1));
                 }
-                keyWasDown[i] = isDown;
-            }
-        } else {
-            // Alt按下时，只更新keyWasDown状态，不处理选择
-            for (int i = 1; i <= 9; i++) {
-                int keyCode = 48 + i;
-                keyWasDown[i] = org.lwjgl.glfw.GLFW.glfwGetKey(minecraft.getWindow().getWindow(), keyCode) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
             }
         }
     }
@@ -142,23 +122,17 @@ public class ExpandedHotbarOverlay {
         // 只在展开状态下处理
         if (!isExpanded() && !isExpanding) return;
         if (expandProgress < 0.3f) return;
-        
-        int key = event.getKey();
-        // 数字键1-9 (GLFW_KEY_1 = 49)
-        if (key >= 49 && key <= 57) {
-            // 检查是否按下了Alt键
-            if (Screen.hasAltDown()) {
-                int targetIndex = key - 49;
-                System.out.println("[HotbarExpand] Alt+Number key: " + (targetIndex + 1) + ", switching hotbar");
-                setCurrentHotbarIndex(targetIndex);
-                selectedSlotInList = targetIndex;
-                
-                // 取消事件，阻止原版物品选择
-                try {
-                    java.lang.reflect.Method method = event.getClass().getMethod("setCanceled", boolean.class);
-                    method.invoke(event, true);
-                } catch (Exception e) {
-                }
+
+        if (!Screen.hasAltDown()) return;
+
+        for (int i = 0; i < 9; i++) {
+            KeyMapping mapping = ClientSetup.getHotbarKey(i);
+            if (matchesKeyMapping(event, mapping)) {
+                System.out.println("[HotbarExpand] Alt+Hotbar key: " + (i + 1) + ", switching hotbar");
+                setCurrentHotbarIndex(i);
+                selectedSlotInList = i;
+                cancelInputEvent(event);
+                break;
             }
         }
     }
@@ -224,6 +198,27 @@ public class ExpandedHotbarOverlay {
                 }
             }
             // 其他情况让原版滚轮正常工作
+        }
+    }
+
+    private static boolean matchesKeyMapping(InputEvent.Key event, KeyMapping mapping) {
+        if (mapping == null) return false;
+
+        InputConstants.Key boundKey = mapping.getKey();
+        if (boundKey.getType() == InputConstants.Type.KEYSYM) {
+            return event.getKey() == boundKey.getValue();
+        }
+        if (boundKey.getType() == InputConstants.Type.SCANCODE) {
+            return event.getScanCode() == boundKey.getValue();
+        }
+        return false;
+    }
+
+    private static void cancelInputEvent(Object event) {
+        try {
+            java.lang.reflect.Method method = event.getClass().getMethod("setCanceled", boolean.class);
+            method.invoke(event, true);
+        } catch (Exception ignored) {
         }
     }
 
