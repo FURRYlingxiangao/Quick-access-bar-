@@ -1,6 +1,5 @@
 package com.example.hotbarexpand.client;
 
-import com.example.hotbarexpand.client.gui.HotbarInventoryScreen;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -8,6 +7,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
@@ -159,6 +159,32 @@ public class ExpandedHotbarOverlay {
     }
     
     @SubscribeEvent
+    public static void onMouseButton(InputEvent.MouseButton.Pre event) {
+        if (!isExpanded()) return;
+        if (event.getAction() != InputConstants.PRESS) return;
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) return;
+        if (minecraft.screen != null) return;
+        if (!isPickItemButton(event.getButton())) return;
+
+        System.out.println("[HotbarExpand] Overlay pick click detected: button=" + event.getButton() + ", screen=" + minecraft.screen + ", expanded=" + isExpanded());
+
+        ItemStack targetItem = getPickBlockItem();
+        if (targetItem.isEmpty()) {
+            System.out.println("[HotbarExpand] Overlay pick click targetItem is empty");
+            return;
+        }
+
+        boolean found = HotbarManager.findAndSelectItem(targetItem);
+        System.out.println("[HotbarExpand] Overlay pick click findAndSelectItem returned: " + found + ", target=" + targetItem.getItem());
+        if (found) {
+            event.setCanceled(true);
+            System.out.println("[HotbarExpand] Overlay pick click canceled vanilla behavior");
+        }
+    }
+
+    @SubscribeEvent
     public static void onMouseScroll(InputEvent.MouseScrollingEvent event) {
         if (!isExpanded() && !isExpanding) return;
         if (expandProgress < 0.3f) return;
@@ -263,6 +289,50 @@ public class ExpandedHotbarOverlay {
     // 保持原版hotbar始终渲染，不再取消
 
     // 使用 RenderGuiEvent.Post 渲染（在所有GUI层之后）
+    private static boolean isPickItemButton(int button) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return button == 2;
+        }
+        InputConstants.Key mouseKey = InputConstants.Type.MOUSE.getOrCreate(button);
+        return minecraft.options.keyPickItem.isActiveAndMatches(mouseKey) || button == 2;
+    }
+
+    private static ItemStack getPickBlockItem() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || minecraft.level == null) return ItemStack.EMPTY;
+        var hitResult = minecraft.hitResult;
+        if (hitResult instanceof net.minecraft.world.phys.BlockHitResult blockHit) {
+            var blockPos = blockHit.getBlockPos();
+            var blockState = minecraft.level.getBlockState(blockPos);
+            var block = blockState.getBlock();
+            ItemStack pickBlock = block.getCloneItemStack(minecraft.level, blockPos, blockState);
+            if (!pickBlock.isEmpty()) {
+                return pickBlock;
+            }
+            var item = block.asItem();
+            if (item != null && item != net.minecraft.world.item.Items.AIR) {
+                return new ItemStack(item);
+            }
+        }
+
+        var pickResult = minecraft.player.pick(20.0, 0.0F, false);
+        if (pickResult instanceof net.minecraft.world.phys.BlockHitResult blockHit) {
+            var blockPos = blockHit.getBlockPos();
+            var blockState = minecraft.level.getBlockState(blockPos);
+            var block = blockState.getBlock();
+            ItemStack pickBlock = block.getCloneItemStack(minecraft.level, blockPos, blockState);
+            if (!pickBlock.isEmpty()) {
+                return pickBlock;
+            }
+            var item = block.asItem();
+            if (item != null && item != net.minecraft.world.item.Items.AIR) {
+                return new ItemStack(item);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -515,14 +585,27 @@ public class ExpandedHotbarOverlay {
      * 从HotbarInventoryScreen获取滚动偏移
      */
     private static int getScrollOffsetFromGUI() {
-        return HotbarInventoryScreen.getScrollOffset();
+        try {
+            Class<?> guiClass = Class.forName("com.example.hotbarexpand.client.gui.HotbarInventoryScreen");
+            java.lang.reflect.Method method = guiClass.getMethod("getScrollOffset");
+            return (int) method.invoke(null);
+        } catch (Exception e) {
+            return 0; // 默认从0开始
+        }
     }
     
     /**
      * 从HotbarInventoryScreen获取最大快捷栏数量
      */
     private static int getMaxHotbarsFromGUI() {
-        return HotbarManager.getHotbarCount();
+        try {
+            Class<?> guiClass = Class.forName("com.example.hotbarexpand.client.gui.HotbarInventoryScreen");
+            java.lang.reflect.Field field = guiClass.getDeclaredField("maxHotbars");
+            field.setAccessible(true);
+            return (int) field.get(null);
+        } catch (Exception e) {
+            return 9; // 默认9个
+        }
     }
     
     // 渲染副手物品

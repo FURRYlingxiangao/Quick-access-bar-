@@ -9,6 +9,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -62,8 +63,6 @@ public class HotbarDataHandler {
             
             File dataFile = new File(saveDir, DATA_FILE_NAME);
             CompoundTag rootTag = new CompoundTag();
-            HolderLookup.Provider lookupProvider = getLookupProvider();
-            HotbarManager.savePlayerInventoryToCurrentHotbar();
             
             // 保存当前选中的快捷栏索引
             rootTag.putInt("CurrentHotbarIndex", HotbarManager.getCurrentHotbarIndex());
@@ -85,7 +84,8 @@ public class HotbarDataHandler {
                     if (!item.isEmpty()) {
                         CompoundTag itemTag = new CompoundTag();
                         itemTag.putInt("Slot", j);
-                        CompoundTag savedItem = (CompoundTag) item.save(lookupProvider, new CompoundTag());
+                        // 使用 save 方法，传入 Provider（可以为 null）
+                        CompoundTag savedItem = (CompoundTag) item.save(null);
                         if (savedItem != null) {
                             itemTag.put("Item", savedItem);
                             itemsList.add(itemTag);
@@ -98,7 +98,7 @@ public class HotbarDataHandler {
                 // 保存副手物品
                 ItemStack offhandItem = HotbarManager.getOffhandItem(i);
                 if (!offhandItem.isEmpty()) {
-                    CompoundTag savedOffhand = (CompoundTag) offhandItem.save(lookupProvider, new CompoundTag());
+                    CompoundTag savedOffhand = (CompoundTag) offhandItem.save(null);
                     if (savedOffhand != null) {
                         hotbarTag.put("Offhand", savedOffhand);
                     }
@@ -149,13 +149,12 @@ public class HotbarDataHandler {
             try (FileInputStream fis = new FileInputStream(dataFile)) {
                 rootTag = net.minecraft.nbt.NbtIo.readCompressed(fis, NbtAccounter.unlimitedHeap());
             }
-            HolderLookup.Provider lookupProvider = getLookupProvider();
             
             // 加载当前选中的快捷栏索引
             int currentIndex = rootTag.getInt("CurrentHotbarIndex");
             
             // 加载保存的快捷栏数量
-            int savedHotbarCount = Math.max(1, rootTag.getInt("HotbarCount"));
+            int savedHotbarCount = rootTag.getInt("HotbarCount");
             
             // 加载所有快捷栏数据
             ListTag hotbarsList = rootTag.getList("Hotbars", Tag.TAG_COMPOUND);
@@ -183,7 +182,8 @@ public class HotbarDataHandler {
                     int slot = itemTag.getInt("Slot");
                     if (itemTag.contains("Item")) {
                         CompoundTag itemData = itemTag.getCompound("Item");
-                        ItemStack item = ItemStack.parse(lookupProvider, itemData).orElse(ItemStack.EMPTY);
+                        // 使用 parse 方法加载物品
+                        ItemStack item = ItemStack.parse(null, itemData).orElse(ItemStack.EMPTY);
                         if (slot >= 0 && slot < 9) {
                             hotbar.set(slot, item);
                         }
@@ -193,7 +193,7 @@ public class HotbarDataHandler {
                 // 加载副手物品
                 if (hotbarTag.contains("Offhand")) {
                     CompoundTag offhandTag = hotbarTag.getCompound("Offhand");
-                    ItemStack offhandItem = ItemStack.parse(lookupProvider, offhandTag).orElse(ItemStack.EMPTY);
+                    ItemStack offhandItem = ItemStack.parse(null, offhandTag).orElse(ItemStack.EMPTY);
                     HotbarManager.setOffhandItem(hotbarIndex, offhandItem);
                 }
                 
@@ -201,12 +201,7 @@ public class HotbarDataHandler {
             }
             
             // 设置当前选中的快捷栏
-            int targetHotbarIndex = Math.min(savedHotbarCount - 1, Math.max(0, currentIndex));
-            if (targetHotbarIndex == HotbarManager.getCurrentHotbarIndex()) {
-                HotbarManager.reloadCurrentHotbarToPlayer();
-            } else {
-                HotbarManager.setCurrentHotbarIndex(targetHotbarIndex);
-            }
+            HotbarManager.setCurrentHotbarIndex(currentIndex);
             
             System.out.println("[HotbarExpand] Loaded " + loadedCount + " hotbars (expected " + savedHotbarCount + ") from " + dataFile.getAbsolutePath());
         } catch (Exception e) {
@@ -269,20 +264,16 @@ public class HotbarDataHandler {
         } catch (Exception e) {
             System.out.println("[HotbarExpand] Error getting save directory: " + e.getMessage());
         }
+        // 回退：使用游戏目录下的 hotbarexpand 目录，确保可以保存
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft != null && minecraft.gameDirectory != null) {
+                File fallback = new File(minecraft.gameDirectory, "hotbarexpand");
+                if (!fallback.exists()) fallback.mkdirs();
+                return fallback;
+            }
+        } catch (Exception ignored) {
+        }
         return null;
-    }
-
-    private static HolderLookup.Provider getLookupProvider() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level != null) {
-            return minecraft.level.registryAccess();
-        }
-        if (minecraft.player != null) {
-            return minecraft.player.registryAccess();
-        }
-        if (minecraft.getConnection() != null) {
-            return minecraft.getConnection().registryAccess();
-        }
-        throw new IllegalStateException("No registry access available for hotbar serialization");
     }
 }

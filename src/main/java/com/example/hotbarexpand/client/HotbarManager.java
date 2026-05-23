@@ -1,5 +1,7 @@
 package com.example.hotbarexpand.client;
 
+import com.example.hotbarexpand.client.gui.HotbarInventoryScreen;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -172,55 +174,118 @@ public class HotbarManager {
     }
     
     public static void setCurrentHotbarIndex(int index) {
-        setCurrentHotbarIndex(index, true);
+        // 获取最大快捷栏数量（从GUI获取，默认9）
+        int maxHotbars = getMaxHotbars();
+        
+        if (index >= 0 && index < maxHotbars && index != currentHotbarIndex) {
+            Minecraft minecraft = Minecraft.getInstance();
+            Player player = minecraft.player;
+            if (player == null) return;
+            
+            // 设置切换冷却，防止同步干扰（必须在保存前设置）
+            switchCooldown = 20;
+            
+            // 先保存当前快捷栏
+            savePlayerInventoryToHotbar(currentHotbarIndex);
+            
+            // 更新索引
+            currentHotbarIndex = index;
+            
+            // 加载新快捷栏到玩家背包（所有快捷栏都加载到玩家背包）
+            loadHotbarToPlayer(index);
+            
+            // 调试输出
+            System.out.println("[HotbarExpand] Switched to hotbar " + (index + 1));
+            // 确保库存面板中的滚动偏移使选中的快捷栏可见
+            try {
+                int visible = HotbarInventoryScreen.getVisibleHotbars();
+                int currentOffset = HotbarInventoryScreen.getScrollOffset();
+                if (index < currentOffset) {
+                    HotbarInventoryScreen.setScrollOffset(index);
+                } else if (index >= currentOffset + visible) {
+                    HotbarInventoryScreen.setScrollOffset(index - visible + 1);
+                }
+            } catch (Exception e) {
+                // 忽略 GUI 不可用的情况
+            }
+        }
+    }
+
+    public static boolean selectHotbarSlot(int hotbarIdx, int slotIdx) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null) return false;
+        if (hotbarIdx < 0 || hotbarIdx >= getHotbarCount() || slotIdx < 0 || slotIdx >= 9) return false;
+        if (hotbarIdx != currentHotbarIndex) {
+            setCurrentHotbarIndex(hotbarIdx);
+        }
+        player.getInventory().selected = slotIdx;
+        if (player.containerMenu != null) {
+            player.containerMenu.broadcastChanges();
+        }
+        return true;
+    }
+
+    public static boolean findAndSelectItem(ItemStack targetItem) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || targetItem.isEmpty()) return false;
+
+        int currentHotbar = getCurrentHotbarIndex();
+
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack item = player.getInventory().getItem(slot);
+            if (isSameItem(item, targetItem)) {
+                return selectHotbarSlot(currentHotbar, slot);
+            }
+        }
+
+        int hotbarCount = getHotbarCount();
+        for (int hotbarIdx = 0; hotbarIdx < hotbarCount; hotbarIdx++) {
+            if (hotbarIdx == currentHotbar) continue;
+            List<ItemStack> hotbarItems = getHotbar(hotbarIdx);
+            for (int slot = 0; slot < 9; slot++) {
+                ItemStack item = hotbarItems.get(slot);
+                if (isSameItem(item, targetItem)) {
+                    return selectHotbarSlot(hotbarIdx, slot);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isSameItem(ItemStack item1, ItemStack item2) {
+        if (item1.isEmpty() || item2.isEmpty()) return false;
+        var item1Key = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item1.getItem());
+        var item2Key = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item2.getItem());
+        return item1Key.getNamespace().equals(item2Key.getNamespace()) && item1Key.getPath().equals(item2Key.getPath());
     }
     
-    public static void setCurrentHotbarIndex(int index, boolean saveCurrentHotbar) {
-        int hotbarCount = getHotbarCount();
-        if (index < 0 || index >= hotbarCount || index == currentHotbarIndex) {
-            return;
+    /**
+     * 获取最大快捷栏数量
+     */
+    private static int getMaxHotbars() {
+        // 从HotbarInventoryScreen获取最大快捷栏数量
+        try {
+            Class<?> guiClass = Class.forName("com.example.hotbarexpand.client.gui.HotbarInventoryScreen");
+            java.lang.reflect.Field field = guiClass.getDeclaredField("maxHotbars");
+            field.setAccessible(true);
+            return (int) field.get(null);
+        } catch (Exception e) {
+            return 9; // 默认9个
         }
-
-        Minecraft minecraft = Minecraft.getInstance();
-        Player player = minecraft.player;
-        if (player == null) return;
-        
-        // 设置切换冷却，防止同步干扰（必须在保存前设置）
-        switchCooldown = 20;
-        
-        if (saveCurrentHotbar) {
-            savePlayerInventoryToHotbar(currentHotbarIndex);
-        }
-        
-        currentHotbarIndex = index;
-        loadHotbarToPlayer(index);
-        System.out.println("[HotbarExpand] Switched to hotbar " + (index + 1));
-    }
-
-    public static void reloadCurrentHotbarToPlayer() {
-        if (currentHotbarIndex < 0 || currentHotbarIndex >= hotbars.size()) {
-            return;
-        }
-
-        Minecraft minecraft = Minecraft.getInstance();
-        Player player = minecraft.player;
-        if (player == null) return;
-
-        switchCooldown = 20;
-        loadHotbarToPlayer(currentHotbarIndex);
     }
     
     public static void scrollToNext() {
-        int hotbarCount = getHotbarCount();
-        if (hotbarCount <= 0) return;
-        int nextIndex = (currentHotbarIndex + 1) % hotbarCount;
+        int maxHotbars = getMaxHotbars();
+        int nextIndex = (currentHotbarIndex + 1) % maxHotbars;
         setCurrentHotbarIndex(nextIndex);
     }
     
     public static void scrollToPrevious() {
-        int hotbarCount = getHotbarCount();
-        if (hotbarCount <= 0) return;
-        int prevIndex = (currentHotbarIndex - 1 + hotbarCount) % hotbarCount;
+        int maxHotbars = getMaxHotbars();
+        int prevIndex = (currentHotbarIndex - 1 + maxHotbars) % maxHotbars;
         setCurrentHotbarIndex(prevIndex);
     }
     

@@ -5,9 +5,9 @@ license="MIT"
 [[mods]]
 modId="hotbarexpand"
 version="1.0.0"
-displayName="Hotbar Expand"
-authors="Example"
-description='''A hotbar expansion mod for Minecraft 1.21.1. Press Ctrl+B to expand/collapse hotbars.'''
+displayName="QuickAccessBar++"
+authors="熬凌翔"
+description='''更多的快捷栏'''
 
 [[dependencies.hotbarexpand]]
 modId="neoforge"
