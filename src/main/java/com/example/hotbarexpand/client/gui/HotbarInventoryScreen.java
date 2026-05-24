@@ -39,7 +39,6 @@ public class HotbarInventoryScreen {
     private static final int BUTTON_GAP = 2; // 按钮间距
     private static final int PANEL_WIDTH = NUMBER_WIDTH + NUMBER_GAP + CONTENT_WIDTH + SCROLLBAR_WIDTH + BUTTON_SIZE + BUTTON_GAP + 8; // 总宽度
     private static final int RIGHT_GAP = 25;
-    private static final int LEFT_GAP = 6;
     private static final int SCREEN_PADDING = 5;
     
     // 面板位置（相对于屏幕）
@@ -113,53 +112,31 @@ public class HotbarInventoryScreen {
      * 重新计算面板位置
      */
     private static boolean recalculatePanelPosition(AbstractContainerScreen<?> screen) {
-        if (isScreenTooSmall(screen)) {
+        int guiLeft = screen.getGuiLeft();
+        int guiWidth = getScreenImageWidth(screen);
+        int rightPanelX = guiLeft + guiWidth + RIGHT_GAP;
+
+        // 右侧放不下就直接隐藏，不再尝试挤位置
+        if (rightPanelX + PANEL_WIDTH > screen.width - SCREEN_PADDING) {
             return false;
         }
 
-        // 在宽度不足时左移原版界面，为快捷栏面板腾出空间
-        adjustScreenPositionForPanel(screen);
-
-        // 计算面板位置：与背包上下对齐，优先靠右侧
-        int guiLeft = screen.getGuiLeft();
         int guiTop = screen.getGuiTop() - 15;
         int guiHeight = 166; // 原版背包高度
-        int guiWidth = getScreenImageWidth(screen);
         
         panelHeight = VISIBLE_HOTBARS * (SLOT_SIZE + PADDING) + 8; // 快捷栏 + 边距
         panelY = guiTop + (guiHeight - panelHeight) / 2; // 垂直居中
         
         // 计算X位置：背包右侧 + 间距
-        panelX = guiLeft + guiWidth + RIGHT_GAP;
-        
-        // 如果超出屏幕右侧，显示在左侧
-        if (panelX + PANEL_WIDTH > screen.width) {
-            panelX = Math.max(SCREEN_PADDING, guiLeft - PANEL_WIDTH - LEFT_GAP);
-        }
+        panelX = rightPanelX;
 
         return true;
-    }
-
-    private static boolean isScreenTooSmall(AbstractContainerScreen<?> screen) {
-        int guiWidth = getScreenImageWidth(screen);
-        int minimumWidth = guiWidth + PANEL_WIDTH + LEFT_GAP + SCREEN_PADDING * 2;
-        return screen.width < minimumWidth;
     }
 
     private static void notifyPanelTooSmall() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null) {
             minecraft.player.displayClientMessage(Component.literal("[警告]屏幕过小 无法容纳"), false);
-        }
-    }
-
-    private static void adjustScreenPositionForPanel(AbstractContainerScreen<?> screen) {
-        int guiWidth = getScreenImageWidth(screen);
-        int guiLeft = screen.getGuiLeft();
-        int maxGuiLeftForRightPanel = screen.width - SCREEN_PADDING - guiWidth - RIGHT_GAP - PANEL_WIDTH;
-
-        if (maxGuiLeftForRightPanel >= SCREEN_PADDING && guiLeft > maxGuiLeftForRightPanel) {
-            setScreenGuiLeft(screen, maxGuiLeftForRightPanel);
         }
     }
 
@@ -173,16 +150,6 @@ public class HotbarInventoryScreen {
         }
     }
 
-    private static void setScreenGuiLeft(AbstractContainerScreen<?> screen, int guiLeft) {
-        try {
-            Field field = AbstractContainerScreen.class.getDeclaredField("leftPos");
-            field.setAccessible(true);
-            field.setInt(screen, guiLeft);
-        } catch (ReflectiveOperationException e) {
-            System.out.println("[HotbarExpand] Failed to adjust gui left: " + e.getMessage());
-        }
-    }
-    
     @SubscribeEvent
     public static void onScreenClose(ScreenEvent.Closing event) {
         isPanelVisible = false;
