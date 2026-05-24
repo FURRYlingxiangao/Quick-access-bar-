@@ -47,6 +47,7 @@ public class HotbarInventoryScreen {
     private static int panelY = 0;
     private static int panelHeight = 0;
     private static boolean isPanelVisible = false;
+    private static boolean panelTooSmall = false;
     
     // 当前高亮的快捷栏索引 - 实时从HotbarManager获取
     private static int currentHotbarIndexCache = -1;
@@ -77,8 +78,14 @@ public class HotbarInventoryScreen {
         
         AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) event.getScreen();
         
-        // 每次打开背包都重新计算位置
-        recalculatePanelPosition(screen);
+        // 每次打开背包都重新计算位置；太小则直接隐藏
+        if (!recalculatePanelPosition(screen)) {
+            isPanelVisible = false;
+            panelTooSmall = true;
+            notifyPanelTooSmall();
+            return;
+        }
+        panelTooSmall = false;
         
         // 初始化快捷栏列表（如果为空）
         initHotbarList();
@@ -105,7 +112,11 @@ public class HotbarInventoryScreen {
     /**
      * 重新计算面板位置
      */
-    private static void recalculatePanelPosition(AbstractContainerScreen<?> screen) {
+    private static boolean recalculatePanelPosition(AbstractContainerScreen<?> screen) {
+        if (isScreenTooSmall(screen)) {
+            return false;
+        }
+
         // 在宽度不足时左移原版界面，为快捷栏面板腾出空间
         adjustScreenPositionForPanel(screen);
 
@@ -124,6 +135,21 @@ public class HotbarInventoryScreen {
         // 如果超出屏幕右侧，显示在左侧
         if (panelX + PANEL_WIDTH > screen.width) {
             panelX = Math.max(SCREEN_PADDING, guiLeft - PANEL_WIDTH - LEFT_GAP);
+        }
+
+        return true;
+    }
+
+    private static boolean isScreenTooSmall(AbstractContainerScreen<?> screen) {
+        int guiWidth = getScreenImageWidth(screen);
+        int minimumWidth = guiWidth + PANEL_WIDTH + LEFT_GAP + SCREEN_PADDING * 2;
+        return screen.width < minimumWidth;
+    }
+
+    private static void notifyPanelTooSmall() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null) {
+            minecraft.player.displayClientMessage(Component.literal("[警告]屏幕过小 无法容纳"), false);
         }
     }
 
@@ -173,7 +199,10 @@ public class HotbarInventoryScreen {
         }
         
         // 每次渲染前重新计算位置，确保位置正确
-        recalculatePanelPosition(screen);
+        if (!recalculatePanelPosition(screen)) {
+            isPanelVisible = false;
+            return;
+        }
         isPanelVisible = true;
         
         GuiGraphics guiGraphics = event.getGuiGraphics();
