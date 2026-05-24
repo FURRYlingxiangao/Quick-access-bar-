@@ -18,6 +18,7 @@ import net.neoforged.neoforge.client.event.ContainerScreenEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,6 +38,9 @@ public class HotbarInventoryScreen {
     private static final int BUTTON_SIZE = 12; // 按钮大小
     private static final int BUTTON_GAP = 2; // 按钮间距
     private static final int PANEL_WIDTH = NUMBER_WIDTH + NUMBER_GAP + CONTENT_WIDTH + SCROLLBAR_WIDTH + BUTTON_SIZE + BUTTON_GAP + 8; // 总宽度
+    private static final int RIGHT_GAP = 25;
+    private static final int LEFT_GAP = 6;
+    private static final int SCREEN_PADDING = 5;
     
     // 面板位置（相对于屏幕）
     private static int panelX = 0;
@@ -102,20 +106,54 @@ public class HotbarInventoryScreen {
      * 重新计算面板位置
      */
     private static void recalculatePanelPosition(AbstractContainerScreen<?> screen) {
-        // 计算面板位置：与背包上下对齐，靠右侧
+        // 在宽度不足时左移原版界面，为快捷栏面板腾出空间
+        adjustScreenPositionForPanel(screen);
+
+        // 计算面板位置：与背包上下对齐，优先靠右侧
         int guiLeft = screen.getGuiLeft();
         int guiTop = screen.getGuiTop() - 15;
         int guiHeight = 166; // 原版背包高度
+        int guiWidth = getScreenImageWidth(screen);
         
         panelHeight = VISIBLE_HOTBARS * (SLOT_SIZE + PADDING) + 8; // 快捷栏 + 边距
         panelY = guiTop + (guiHeight - panelHeight) / 2; // 垂直居中
         
         // 计算X位置：背包右侧 + 间距
-        panelX = guiLeft + 176 + 25; // 背包宽度176 + 间距
+        panelX = guiLeft + guiWidth + RIGHT_GAP;
         
         // 如果超出屏幕右侧，显示在左侧
         if (panelX + PANEL_WIDTH > screen.width) {
-            panelX = Math.max(5, guiLeft - PANEL_WIDTH - 6);
+            panelX = Math.max(SCREEN_PADDING, guiLeft - PANEL_WIDTH - LEFT_GAP);
+        }
+    }
+
+    private static void adjustScreenPositionForPanel(AbstractContainerScreen<?> screen) {
+        int guiWidth = getScreenImageWidth(screen);
+        int guiLeft = screen.getGuiLeft();
+        int maxGuiLeftForRightPanel = screen.width - SCREEN_PADDING - guiWidth - RIGHT_GAP - PANEL_WIDTH;
+
+        if (maxGuiLeftForRightPanel >= SCREEN_PADDING && guiLeft > maxGuiLeftForRightPanel) {
+            setScreenGuiLeft(screen, maxGuiLeftForRightPanel);
+        }
+    }
+
+    private static int getScreenImageWidth(AbstractContainerScreen<?> screen) {
+        try {
+            Field field = AbstractContainerScreen.class.getDeclaredField("imageWidth");
+            field.setAccessible(true);
+            return field.getInt(screen);
+        } catch (ReflectiveOperationException ignored) {
+            return screen instanceof CreativeModeInventoryScreen ? 195 : 176;
+        }
+    }
+
+    private static void setScreenGuiLeft(AbstractContainerScreen<?> screen, int guiLeft) {
+        try {
+            Field field = AbstractContainerScreen.class.getDeclaredField("leftPos");
+            field.setAccessible(true);
+            field.setInt(screen, guiLeft);
+        } catch (ReflectiveOperationException e) {
+            System.out.println("[HotbarExpand] Failed to adjust gui left: " + e.getMessage());
         }
     }
     
