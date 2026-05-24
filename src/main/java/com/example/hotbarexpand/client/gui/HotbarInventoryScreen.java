@@ -40,6 +40,7 @@ public class HotbarInventoryScreen {
     private static final int PANEL_WIDTH = NUMBER_WIDTH + NUMBER_GAP + CONTENT_WIDTH + SCROLLBAR_WIDTH + BUTTON_SIZE + BUTTON_GAP + 8; // 总宽度
     private static final int RIGHT_GAP = 25;
     private static final int SCREEN_PADDING = 5;
+    private static final Component PANEL_TOO_SMALL_TEXT = Component.literal("[警告]屏幕过小 无法容纳");
     
     // 面板位置（相对于屏幕）
     private static int panelX = 0;
@@ -81,7 +82,6 @@ public class HotbarInventoryScreen {
         if (!recalculatePanelPosition(screen)) {
             isPanelVisible = false;
             panelTooSmall = true;
-            notifyPanelTooSmall();
             return;
         }
         panelTooSmall = false;
@@ -133,13 +133,6 @@ public class HotbarInventoryScreen {
         return true;
     }
 
-    private static void notifyPanelTooSmall() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player != null) {
-            minecraft.player.displayClientMessage(Component.literal("[警告]屏幕过小 无法容纳"), false);
-        }
-    }
-
     private static int getScreenImageWidth(AbstractContainerScreen<?> screen) {
         try {
             Field field = AbstractContainerScreen.class.getDeclaredField("imageWidth");
@@ -168,8 +161,11 @@ public class HotbarInventoryScreen {
         // 每次渲染前重新计算位置，确保位置正确
         if (!recalculatePanelPosition(screen)) {
             isPanelVisible = false;
+            panelTooSmall = true;
+            renderPanelTooSmallWarning(event.getGuiGraphics(), screen);
             return;
         }
+        panelTooSmall = false;
         isPanelVisible = true;
         
         GuiGraphics guiGraphics = event.getGuiGraphics();
@@ -231,6 +227,22 @@ public class HotbarInventoryScreen {
         renderPlusMinusButtons(guiGraphics, buttonX, contentStartY - 5, scrollbarHeight, minecraft);
         
         RenderSystem.disableBlend();
+    }
+
+    private static void renderPanelTooSmallWarning(GuiGraphics guiGraphics, AbstractContainerScreen<?> screen) {
+        int guiLeft = screen.getGuiLeft();
+        int guiTop = screen.getGuiTop();
+        int guiWidth = getScreenImageWidth(screen);
+        int textWidth = Minecraft.getInstance().font.width(PANEL_TOO_SMALL_TEXT);
+        int warningX = guiLeft + guiWidth + 8;
+        int warningY = guiTop + 10;
+
+        if (warningX + textWidth > screen.width - SCREEN_PADDING) {
+            warningX = Math.max(SCREEN_PADDING, screen.width - SCREEN_PADDING - textWidth);
+        }
+
+        guiGraphics.fill(warningX - 4, warningY - 3, warningX + textWidth + 4, warningY + 10, 0xCC2B2B2B);
+        guiGraphics.drawString(Minecraft.getInstance().font, PANEL_TOO_SMALL_TEXT, warningX, warningY, 0xFFFF6666);
     }
     
     /**

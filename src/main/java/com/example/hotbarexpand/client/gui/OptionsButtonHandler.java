@@ -20,7 +20,7 @@ public class OptionsButtonHandler {
         int buttonWidth = 150;
         int buttonHeight = 20;
         int x = screen.width / 2 - buttonWidth / 2;
-        int y = screen.height / 6 + 144; // 放在较下方的位置
+        int y = Math.min(screen.height - 28, screen.height / 6 + 168);
         
         Button hotbarSettingsButton = Button.builder(
             Component.literal("快捷栏设置..."),
