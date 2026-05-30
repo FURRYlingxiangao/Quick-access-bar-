@@ -81,8 +81,8 @@ public class HotbarInventoryScreen {
             return;
         }
         
-        // 生存模式下不展开背包GUI
-        if (HotbarManager.isSurvivalMode()) {
+        // 冒险/生存/观察者模式不显示背包GUI快捷栏，只有创造模式显示
+        if (!isCreativeMode()) {
             isPanelVisible = false;
             return;
         }
@@ -116,6 +116,24 @@ public class HotbarInventoryScreen {
         isPanelVisible = true;
         showWidthWarning = false;
         System.out.println("[HotbarExpand] Hotbar panel positioned at (" + panelX + ", " + panelY + "), height=" + panelHeight);
+    }
+    
+    /**
+     * 检查是否为旁观者模式
+     */
+    private static boolean isSpectatorMode() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.gameMode == null) return false;
+        return minecraft.gameMode.getPlayerMode() == net.minecraft.world.level.GameType.SPECTATOR;
+    }
+    
+    /**
+     * 检查是否为创造模式
+     */
+    private static boolean isCreativeMode() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.gameMode == null) return false;
+        return minecraft.gameMode.getPlayerMode() == net.minecraft.world.level.GameType.CREATIVE;
     }
     
     /**
@@ -166,17 +184,22 @@ public class HotbarInventoryScreen {
      * 游戏模式切换时调用
      */
     public static void onGameModeChanged() {
-        // 重置面板状态
-        isPanelVisible = false;
+        // 重置拖动状态，但保持面板可见性
         isDraggingScrollbar = false;
         isDraggingItems = false;
         draggedItem = ItemStack.EMPTY;
         dragButton = -1;
         draggedSlots.clear();
-        scrollOffset = 0;
         showWidthWarning = false;
         warningTimer = 0;
-        System.out.println("[HotbarExpand] HotbarInventoryScreen state reset due to game mode change");
+        
+        // 如果切换到非创造模式，强制关闭面板
+        if (!isCreativeMode()) {
+            isPanelVisible = false;
+        }
+        // 否则保持当前面板状态（展开或收起）
+        
+        System.out.println("[HotbarExpand] HotbarInventoryScreen state reset due to game mode change, panelVisible=" + isPanelVisible);
     }
 
     
@@ -188,8 +211,8 @@ public class HotbarInventoryScreen {
             return;
         }
         
-        // 生存模式下不渲染任何内容
-        if (HotbarManager.isSurvivalMode()) {
+        // 只在创造模式下渲染背包GUI快捷栏
+        if (!isCreativeMode()) {
             return;
         }
         
@@ -273,6 +296,75 @@ public class HotbarInventoryScreen {
         renderPlusMinusButtons(guiGraphics, buttonX, contentStartY - 5, scrollbarHeight, minecraft);
         
         RenderSystem.disableBlend();
+    }
+    
+    /**
+     * 渲染前景（物品提示）
+     */
+    @SubscribeEvent
+    public static void onContainerForeground(ContainerScreenEvent.Render.Foreground event) {
+        AbstractContainerScreen<?> screen = event.getContainerScreen();
+        
+        if (!(screen instanceof InventoryScreen) && !(screen instanceof CreativeModeInventoryScreen)) {
+            return;
+        }
+        
+        // 只在创造模式下渲染
+        if (!isCreativeMode()) {
+            return;
+        }
+        
+        // 面板不可见时不渲染
+        if (!isPanelVisible) {
+            return;
+        }
+        
+        GuiGraphics guiGraphics = event.getGuiGraphics();
+        Minecraft minecraft = Minecraft.getInstance();
+        int mouseX = event.getMouseX();
+        int mouseY = event.getMouseY();
+        
+        // 检查鼠标是否悬停在物品槽位上
+        renderSlotTooltip(guiGraphics, minecraft, mouseX, mouseY);
+    }
+    
+    /**
+     * 渲染物品槽位的提示
+     */
+    private static void renderSlotTooltip(GuiGraphics guiGraphics, Minecraft minecraft, int mouseX, int mouseY) {
+        int contentStartY = panelY + 4;
+        int contentStartX = panelX + NUMBER_WIDTH + NUMBER_GAP + 4;
+        int visibleCount = Math.min(INVENTORY_VISIBLE_HOTBARS, maxHotbars - scrollOffset);
+        
+        // 检查9个物品槽位
+        for (int i = 0; i < visibleCount; i++) {
+            int hotbarIdx = scrollOffset + i;
+            int rowY = contentStartY + i * (SLOT_SIZE + PADDING);
+            
+            for (int slotIdx = 0; slotIdx < 9; slotIdx++) {
+                int slotX = contentStartX + slotIdx * SLOT_SIZE;
+                
+                if (mouseX >= slotX && mouseX < slotX + SLOT_SIZE && 
+                    mouseY >= rowY && mouseY < rowY + SLOT_SIZE) {
+                    ItemStack itemStack = getHotbarItem(hotbarIdx, slotIdx);
+                    if (!itemStack.isEmpty()) {
+                        guiGraphics.renderTooltip(minecraft.font, itemStack, mouseX, mouseY);
+                    }
+                    return;
+                }
+            }
+            
+            // 检查副手槽位
+            int offhandX = contentStartX + 9 * SLOT_SIZE + 2;
+            if (mouseX >= offhandX && mouseX < offhandX + SLOT_SIZE && 
+                mouseY >= rowY && mouseY < rowY + SLOT_SIZE) {
+                ItemStack offhandItem = HotbarManager.getOffhandItem(hotbarIdx);
+                if (!offhandItem.isEmpty()) {
+                    guiGraphics.renderTooltip(minecraft.font, offhandItem, mouseX, mouseY);
+                }
+                return;
+            }
+        }
     }
     
     /**
@@ -500,6 +592,9 @@ public class HotbarInventoryScreen {
     public static void onMouseScroll(InputEvent.MouseScrollingEvent event) {
         if (!isPanelVisible) return;
         
+        // 只在创造模式下处理
+        if (!isCreativeMode()) return;
+        
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen == null) return;
         if (!(minecraft.screen instanceof InventoryScreen) && !(minecraft.screen instanceof CreativeModeInventoryScreen)) {
@@ -538,6 +633,10 @@ public class HotbarInventoryScreen {
     @SubscribeEvent
     public static void onMouseClick(ScreenEvent.MouseButtonPressed.Pre event) {
         if (!isPanelVisible) return;
+        
+        // 只在创造模式下处理
+        if (!isCreativeMode()) return;
+        
         if (!(event.getScreen() instanceof InventoryScreen) && !(event.getScreen() instanceof CreativeModeInventoryScreen)) {
             return;
         }
@@ -709,6 +808,10 @@ public class HotbarInventoryScreen {
     @SubscribeEvent
     public static void onMouseRelease(ScreenEvent.MouseButtonReleased.Pre event) {
         if (!isPanelVisible) return;
+        
+        // 只在创造模式下处理
+        if (!isCreativeMode()) return;
+        
         if (!(event.getScreen() instanceof InventoryScreen) && !(event.getScreen() instanceof CreativeModeInventoryScreen)) {
             return;
         }
@@ -763,6 +866,10 @@ public class HotbarInventoryScreen {
     @SubscribeEvent
     public static void onMouseDrag(ScreenEvent.MouseDragged.Pre event) {
         if (!isPanelVisible) return;
+        
+        // 只在创造模式下处理
+        if (!isCreativeMode()) return;
+        
         if (!(event.getScreen() instanceof InventoryScreen) && !(event.getScreen() instanceof CreativeModeInventoryScreen)) {
             return;
         }

@@ -66,7 +66,7 @@ public class HotbarManager {
      */
     public static boolean isSurvivalMode() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null) return false;
+        if (minecraft.player == null || minecraft.gameMode == null) return false;
         return minecraft.gameMode.getPlayerMode() == GameType.SURVIVAL;
     }
 
@@ -931,39 +931,54 @@ public class HotbarManager {
             configLoaded = true;
         }
 
-        // 非生存模式下，每5 tick同步当前快捷栏（但有冷却时间）
-        if (!isSurvivalMode() && minecraft.level != null && minecraft.level.getGameTime() % 5 == 0) {
-            // 冷却时间内不同步，防止覆盖刚加载的快捷栏
-            if (syncCooldownTicks > 0) {
-                syncCooldownTicks--;
-                // 冷却时间内，只强制将hotbars的数据写回玩家背包，不发送数据包到服务器
-                // 因为创造模式下服务器是权威的，发送数据包可能导致问题
-                ensureHotbarExists(currentHotbarIndex);
-                List<ItemStack> currentHotbar = hotbars.get(currentHotbarIndex);
-                for (int i = 0; i < 9; i++) {
-                    ItemStack expectedItem = currentHotbar.get(i);
-                    ItemStack playerItem = player.getInventory().getItem(i);
-                    if (!ItemStack.matches(expectedItem, playerItem)) {
-                        // 服务器覆盖了我们的物品，重新设置（仅在客户端）
-                        player.getInventory().setItem(i, expectedItem.copy());
-                    }
-                }
-                return;
+        // 处理/clear指令：检测玩家背包是否被清空
+        // 只在创造模式下处理，且不在冷却时间内
+        if (minecraft.level != null && syncCooldownTicks <= 0) {
+            handleClearCommand(player);
+        }
+
+        // 冷却时间递减
+        if (syncCooldownTicks > 0) {
+            syncCooldownTicks--;
+        }
+    }
+
+    /**
+     * 处理/clear指令：当检测到玩家背包被清空时，只更新当前快捷栏的数据
+     * 不切换快捷栏，不加载数据到玩家背包，只同步数据状态
+     */
+    private static void handleClearCommand(Player player) {
+        // 检查玩家背包是否为空（/clear指令执行后）
+        boolean isPlayerInventoryEmpty = true;
+        for (int i = 0; i < 9; i++) {
+            if (!player.getInventory().getItem(i).isEmpty()) {
+                isPlayerInventoryEmpty = false;
+                break;
             }
+        }
 
+        // 如果背包为空，同步当前快捷栏数据（只更新数据，不加载）
+        if (isPlayerInventoryEmpty) {
             ensureHotbarExists(currentHotbarIndex);
-
             List<ItemStack> currentHotbar = hotbars.get(currentHotbarIndex);
+            
+            // 只更新当前快捷栏的数据，不加载到玩家背包
+            boolean wasNotEmpty = false;
             for (int i = 0; i < 9; i++) {
-                ItemStack playerItem = player.getInventory().getItem(i);
-                if (!ItemStack.matches(currentHotbar.get(i), playerItem)) {
-                    currentHotbar.set(i, playerItem.copy());
+                if (!currentHotbar.get(i).isEmpty()) {
+                    wasNotEmpty = true;
                 }
+                currentHotbar.set(i, ItemStack.EMPTY);
             }
             // 同步副手物品
-            ItemStack playerOffhand = player.getOffhandItem();
-            if (!ItemStack.matches(offhandSlots.get(currentHotbarIndex), playerOffhand)) {
-                offhandSlots.set(currentHotbarIndex, playerOffhand.copy());
+            if (!offhandSlots.get(currentHotbarIndex).isEmpty()) {
+                wasNotEmpty = true;
+            }
+            offhandSlots.set(currentHotbarIndex, ItemStack.EMPTY);
+
+            // 如果之前有物品，打印日志
+            if (wasNotEmpty) {
+                System.out.println("[HotbarExpand] /clear detected: cleared current hotbar " + (currentHotbarIndex + 1));
             }
         }
     }
@@ -980,9 +995,12 @@ public class HotbarManager {
         System.out.println("[HotbarExpand] From: " + oldMode + " To: " + newMode);
 
         // ========== 全局重置 ==========
-        // 1. 重置展开状态
-        isExpanded = false;
-        ExpandedHotbarOverlay.resetExpandedState();
+        // 1. 所有模式之间切换都保存快捷栏展开状态
+        // 只有切换到旁观者模式时才重置展开状态
+        if (newMode == GameType.SPECTATOR) {
+            isExpanded = false;
+            ExpandedHotbarOverlay.resetExpandedState();
+        }
 
         // 2. 重置栏身份映射（生存模式下）
         if (newMode == GameType.SURVIVAL) {
